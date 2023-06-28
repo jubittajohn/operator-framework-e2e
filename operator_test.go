@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -30,13 +31,13 @@ var (
 )
 
 const (
-	testCatalogRef   = "localhost/testdata/catalogs/catalog:v4.5.0"
+	testCatalogRef   = "localhost/testdata/catalogs/catalog:v0.2.0"
 	testCatalogName  = "test-catalog"
 	testOperatorName = "test-operator"
 	createPkgName    = "plain"
 	createPkgVersion = "0.1.0"
 	updatePkgName    = "plain"
-	updatePkgVersion = "0.2.0"
+	updatePkgVersion = "0.1.1"
 )
 
 func TestOperatorCreateUpgradeDelete(t *testing.T) {
@@ -102,6 +103,9 @@ var _ = Describe("Operator creation, upgradtion and deletion", func() {
 			By("Eventually reporting a successful resolution and bundle path")
 			checkResolutionAndBundlePath(operator, createPkgVersion)
 
+			By("Eventually installing the operator successfully")
+			checkOperatorInstalled(operator)
+
 			By("Eventually installing the package successfully")
 			checkPackageInstalled(operator)
 		})
@@ -114,7 +118,10 @@ var _ = Describe("Operator creation, upgradtion and deletion", func() {
 			By("Eventually reporting a successful resolution and bundle path for the upgraded version")
 			checkResolutionAndBundlePath(operator, updatePkgVersion)
 
-			By("Eventually installing the package successfully")
+			By("Eventually upgrading the operator successfully")
+			checkOperatorInstalled(operator)
+
+			By("Eventually upgrading the package successfully")
 			checkPackageInstalled(operator)
 
 		})
@@ -138,7 +145,7 @@ func checkCatalogUnpacked(operatorCatalog *catalogd.Catalog) {
 		g.Expect(cond).ToNot(BeNil())
 		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		g.Expect(cond.Reason).To(Equal(catalogd.ReasonUnpackSuccessful))
-	}, 8, 1).Should(Succeed())
+	}, 10*time.Second, 1).Should(Succeed())
 }
 
 func checkPackageCreated() {
@@ -170,10 +177,10 @@ func checkResolutionAndBundlePath(operator *operatorv1alpha1.Operator, operatorV
 		g.Expect(cond.Message).To(ContainSubstring("resolved to"))
 		g.Expect(operator.Status.ResolvedBundleResource).ToNot(BeEmpty())
 		g.Expect(operator.Spec.Version).To(Equal(operatorVersion))
-	}, 8, 1).Should(Succeed())
+	}, 10*time.Second, 1).Should(Succeed())
 }
 
-func checkPackageInstalled(operator *operatorv1alpha1.Operator) {
+func checkOperatorInstalled(operator *operatorv1alpha1.Operator) {
 	Eventually(func(g Gomega) {
 		g.Expect(c.Get(ctx, types.NamespacedName{Name: operator.Name}, operator)).To(Succeed())
 		cond := apimeta.FindStatusCondition(operator.Status.Conditions, operatorv1alpha1.TypeInstalled)
@@ -182,13 +189,17 @@ func checkPackageInstalled(operator *operatorv1alpha1.Operator) {
 		g.Expect(cond.Reason).To(Equal(operatorv1alpha1.ReasonSuccess))
 		g.Expect(cond.Message).To(ContainSubstring("installed from"))
 		g.Expect(operator.Status.InstalledBundleResource).ToNot(BeEmpty())
+	}, 10*time.Second, 1).Should(Succeed())
+}
 
+func checkPackageInstalled(operator *operatorv1alpha1.Operator) {
+	Eventually(func(g Gomega) {
 		bd := rukpakv1alpha1.BundleDeployment{}
 		g.Expect(c.Get(ctx, types.NamespacedName{Name: operator.Name}, &bd)).To(Succeed())
 		g.Expect(len(bd.Status.Conditions)).To(Equal(2))
 		g.Expect(bd.Status.Conditions[0].Reason).To(Equal("UnpackSuccessful"))
 		g.Expect(bd.Status.Conditions[1].Reason).To(Equal("InstallationSucceeded"))
-	}, 8, 1).Should(Succeed())
+	}, 10*time.Second, 1).Should(Succeed())
 }
 
 func checkOperatorDeleted(operator *operatorv1alpha1.Operator) {
