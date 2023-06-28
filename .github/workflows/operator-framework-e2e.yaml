@@ -20,3 +20,12 @@ jobs:
 
     - name: Run the e2e test routine
       run: go test -v ./...
+
+    - name: Display test results
+      uses: actions/github-script@v4
+      with:
+        script: |
+          const fs = require('fs');
+          const testOutput = fs.readFileSync('test_output.txt', 'utf8');
+          console.log(testOutput);
+      if: ${{ job.status == 'failure' }}
