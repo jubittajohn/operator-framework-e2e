@@ -10,7 +10,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,6 +40,7 @@ const (
 	createPkgVersion = "0.1.0"
 	updatePkgName    = "plain"
 	updatePkgVersion = "0.1.1"
+	nameSpace        = "rukpak-system"
 )
 
 func TestOperatorCreateUpgradeDelete(t *testing.T) {
@@ -65,6 +68,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).To(Not(HaveOccurred()))
 
 	ctx = context.Background()
+
 })
 
 var _ = AfterSuite(func() {
@@ -108,6 +112,9 @@ var _ = Describe("Operator creation, upgradtion and deletion", func() {
 
 			By("Eventually installing the package successfully")
 			checkPackageInstalled(operator)
+
+			By("Eventually verifying the presence of relevant manifest on cluster from the bundle")
+			checkManifestPresence(createPkgName, createPkgVersion)
 		})
 	})
 	When("An operator is upgraded to a higher version", func() {
@@ -123,6 +130,9 @@ var _ = Describe("Operator creation, upgradtion and deletion", func() {
 
 			By("Eventually upgrading the package successfully")
 			checkPackageInstalled(operator)
+
+			By("Eventually verifying the presence of relevant manifest on cluster from the bundle")
+			checkManifestPresence(createPkgName, createPkgVersion)
 
 		})
 	})
@@ -200,6 +210,23 @@ func checkPackageInstalled(operator *operatorv1alpha1.Operator) {
 		g.Expect(bd.Status.Conditions[0].Reason).To(Equal("UnpackSuccessful"))
 		g.Expect(bd.Status.Conditions[1].Reason).To(Equal("InstallationSucceeded"))
 	}, 10*time.Second, 1).Should(Succeed())
+}
+
+func checkManifestPresence(packageName string, version string) {
+	Eventually(func(g Gomega) {
+		resources, _ := collectKubernetesObjects(packageName, version)
+		for _, resource := range resources {
+			gvk := schema.GroupVersionKind{
+				Group:   "",
+				Version: resource.APIVersion,
+				Kind:    resource.Kind,
+			}
+
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(gvk)
+			g.Expect(c.Get(ctx, types.NamespacedName{Name: resource.Metadata.Name, Namespace: nameSpace}, obj)).To(Succeed())
+		}
+	}).Should(Succeed())
 }
 
 func checkOperatorDeleted(operator *operatorv1alpha1.Operator) {
